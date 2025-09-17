@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patagonia Royal Odyssey – Interactive Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-XQoYMqMTK8LvdlDXvXO1e3U1b0w36p5Z3E2f3v6t27M=" crossorigin=""/>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    #app { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: 100vh; }
+    #sidebar { padding: 16px; border-right: 1px solid #e6e6e6; overflow: auto; }
+    #map { height: 100vh; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .note { color: #555; font-size: 12px; margin-bottom: 12px; }
+    .item { padding: 10px 8px; border-radius: 10px; cursor: pointer; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center; }
+    .item:hover { background: #f6f6f6; }
+    .emoji { font-size: 22px; line-height: 1; }
+    .title { font-weight: 600; }
+    .dates { font-size: 12px; color: #666; }
+    .legend { margin-top: 8px; font-size: 12px; color: #666; }
+    .btns { display:flex; gap:8px; margin-top:10px; }
+    button { background:#111; color:white; border:none; border-radius:10px; padding:8px 10px; font-weight:600; cursor:pointer; }
+    button.secondary { background:#f1f1f1; color:#111; }
+    .popup h3{ margin:0 0 6px; font-size:16px; }
+    .popup .dates{ font-size:12px; color:#666; margin-bottom:8px; }
+    .popup .desc{ font-size:13px; line-height:1.35; }
+    @media (max-width: 900px){ #app{ grid-template-columns: 1fr; grid-template-rows: 40vh 60vh; } #sidebar{ border-right: none; border-bottom: 1px solid #e6e6e6; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <h1>Patagonia 2026 – Interactive Map</h1>
+      <div class="note">Click a stop (or pick from the list) to view its itinerary details. Update the <b>stops</b> JSON below to keep the site in sync with your latest plan.</div>
+      <div id="list"></div>
+      <div class="legend">Order is shown by the path line from 🌵 → 🗿.</div>
+      <div class="btns">
+        <button id="fit">Fit Route</button>
+        <button class="secondary" id="toggleLine">Toggle Path</button>
+      </div>
+    </aside>
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o9N1j7kPupHkHfZ3G6HkUO5rK0vE1sE0pMB6+Z8Z1D8=" crossorigin=""></script>
+  <script>
+    // --- DATA MODEL: Edit this object to update the site ---
+    const stops = [
+      { key: 'atacama', name: 'Atacama Desert', emoji: '🌵',  lat: -22.91,  lng: -68.20, dates:'19–22 Jan', hotel:'Nayara Alto / Our Habitas / Awasi (tbc)',  desc:'Puritama Hot Springs; Geysers del Tatio sunrise; Rainbow Valley; Altiplanic Lagoons; Valley of the Moon; private stargazing.' },
+      { key: 'ba', name: 'Buenos Aires', emoji: '💃🕺', lat: -34.60,  lng: -58.38, dates:'22–24 Jan', hotel:'Four Seasons – Suite Alzaga Unzué (Room #107)', desc:'VIP arrival; La Brigada lunch; Mercado San Telmo; private tango with Mora Godoy; Felipe Pigna history tour; El Viejo Almacén private balcony; (Juan Falú recital tbc).'},
+      { key: 'areco', name: 'San Antonio de Areco', emoji: '🤠',  lat: -34.25,  lng: -59.47, dates:'25 Jan', hotel:'Estancia La Bamba de Areco – Cottage Suite King & Pampa Queen', desc:'Coffee stop in town; estancia asado; horseback/calesa; gaucho demos; private dinner with folk guitar & dance.' },
+      { key: 'madryn', name: 'Puerto Madryn', emoji: '🐧',  lat: -42.77,  lng: -65.04, dates:'26 Jan', hotel:'Peninsula Valdés Hotel (suite + adjoining king)', desc:'Private jet; luncheon with Dr. Pablo García Borboroglu (Global Penguin Society); penguin & sea‑lion colonies; private dinner with local music/dance.' },
+      { key: 'ushuaia', name: 'Ushuaia', emoji: '🧭',  lat: -54.80,  lng: -68.30, dates:'27–28 Jan', hotel:'Los Cauquenes – Patagonia/Senior Suites Canal Beagle', desc:'Early zodiac for dolphins/whales; Beagle Channel cruise; lakes/viewpoints/“End of the World” train; Martín Gusinde Museum (Yámana heritage); private dinner; (Selk’nam/Tehuelche rituals tbc).'},
+      { key: 'calafate', name: 'El Calafate & El Chaltén', emoji: '🧊',  lat: -50.34, lng: -72.27, dates:'29–30 Jan', hotel:'EOLO Patagonia Spirit – Double Premium', desc:'Charter to FTE; Lago Argentino sunset; duo Huenchul performance + Tehuelche anthropologist (tbc); heli to Mirador de los Cóndores; Glaciarium scientists; private boat to Perito Moreno with Dr. Skvarca team (confirmed).'},
+      { key: 'tdp', name: 'Torres del Paine', emoji: '🏔️',  lat: -51.25,  lng: -72.35, dates:'31 Jan–2 Feb', hotel:'Awasi Villa (avail) or Tierra Patagonia (suites avail)', desc:'Arrive via PNT; gaucho folk & payador night; puma‑tracking with local expert (Cristian Saucedo not based in TDP; sourcing local tracker); Big‑5 focus: guanaco, rhea, huemul, condor, puma.' },
+      { key: 'osorno', name: 'Osorno / Lake Llanquihue', emoji: '🌋',  lat: -40.574, lng: -73.133, dates:'3–7 Feb', hotel:'Hotel AWA (holds in place)', desc:'Charter to PMC → drive to Puerto Varas; lakeside dinner; Colonos Route private lunch; artisans; Mapuche ceremony with Machi (with Dr. Bacigalupo context; outreach ongoing).'},
+      { key: 'chiloe', name: 'Chiloé Island', emoji: '⛪',  lat: -42.48,  lng: -73.76, dates:'5–6 Feb (within Osorno block)', hotel:'Refugia Lodge (Rilán/Pullou)', desc:'Ferry crossing; family farmstead lunch; UNESCO churches; artisan workshops; fishing village coastal walk; cozy dinner & overnight.' },
+      { key: 'santiago', name: 'Santiago & Wine Valleys', emoji: '🍷',  lat: -33.45,  lng: -70.66, dates:'7–10 Feb (+ 15 Feb)', hotel:'Ritz‑Carlton Santiago; Wine Option A: Casa Real Santa Rita (Maipo) • Option B: VIK (Millahue)', desc:'City culture, galleries, cueca; Option A: vineyard tour, blending workshop, Andean Museum; Option B: VIK tour/tastings, spa, trails, art. Return to Santiago (10 & 15 Feb).'},
+      { key: 'rapanui', name: 'Easter Island (Rapa Nui)', emoji: '🗿',  lat: -27.15,  lng: -109.43, dates:'11–14 Feb', hotel:'Nayara Hangaroa – Tilo Suite + connecting deluxe', desc:'LATAM LA845 SCL→IPC; Tapati Festival; Tahai & Ahu Akivi with Cristian Moreno Pakarati (confirmed); Rano Raraku & Ahu Tongariki; Orongo & Rano Kau; private ceremony with Te Moana Nui O Hiva (partners aligning).'}
+    ];
+
+    // --- MAP ---
+    const map = L.map('map', { worldCopyJump: true, preferCanvas: true }).setView([-41,-72], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap' }).addTo(map);
+
+    // Utility to make an emoji DivIcon
+    const makeEmojiIcon = (emoji) => L.divIcon({
+      html: `<div style="font-size:28px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35));">${emoji}</div>`,
+      className: 'emoji-pin', iconSize: [28, 28], iconAnchor: [14, 14]
+    });
+
+    // Add markers + build list + popups
+    const features = [];
+    const list = document.getElementById('list');
+
+    stops.forEach((s, idx) => {
+      const m = L.marker([s.lat, s.lng], { icon: makeEmojiIcon(s.emoji), title: s.name }).addTo(map);
+      m.bindPopup(`<div class="popup"><h3>${s.emoji} ${s.name}</h3><div class="dates">${s.dates || ''}</div><div class="desc">${s.desc || ''}</div></div>`);
+      features.push(m);
+
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.innerHTML = `<div class="emoji">${s.emoji}</div><div><div class="title">${idx+1}. ${s.name}</div><div class="dates">${s.dates || ''}</div></div>`;
+      row.onclick = () => { map.setView([s.lat, s.lng], s.key === 'rapanui' ? 7 : 6, { animate: true }); m.openPopup(); };
+      list.appendChild(row);
+    });
+
+    // Draw ordered path
+    const latlngs = stops.map(s => [s.lat, s.lng]);
+    const route = L.polyline(latlngs, { color: '#0a58ca', weight: 3, opacity: 0.9, dashArray: '6,6' }).addTo(map);
+
+    // Fit to route
+    const fitToRoute = () => map.fitBounds(route.getBounds(), { padding: [20,20] });
+    fitToRoute();
+
+    // Controls
+    document.getElementById('fit').onclick = fitToRoute;
+    document.getElementById('toggleLine').onclick = () => {
+      if(map.hasLayer(route)) { map.removeLayer(route); } else { route.addTo(map); }
+    };
+
+    // --- HOW TO UPDATE ---
+    // 1) Change text, dates, hotels, etc. in the `stops` array above.
+    // 2) Reorder the trip by reordering the items in `stops`.
+    // 3) To host: save this file as index.html and drop it on Netlify, Vercel, or GitHub Pages.
+  </script>
+</body>
+</html>
